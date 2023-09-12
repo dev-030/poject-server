@@ -71,7 +71,7 @@ app.post('/jwt', (req, res) => {
 })
 
 app.get('/',(req,res) => {
-  res.send('this server is runnig fine')
+  res.send({mesage : 'Everything runing fine...'})
 })
 
 // user collection api
