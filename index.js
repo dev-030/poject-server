@@ -37,9 +37,13 @@ const verifyJWT = (req, res, next) => {
 
 
 
+
+
+
+
+
 const uri = `mongodb+srv://netpay-server:zo9XaDDcnCg58gGZ@cluster0.rfaan6v.mongodb.net/?retryWrites=true&w=majority`;
 
-// Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -49,30 +53,37 @@ const client = new MongoClient(uri, {
 });
 
 async function run() {
+
   try {
-    // Connect the client to the server	(optional starting in v4.7)
-     client.connect();
 
-const userCollection = client.db('Netpay').collection('userCollection');
-const agentTransactionCollection = client.db('Netpay').collection('agentTransactions');
-const adminTransectionCollection = client.db('Netpay').collection('adminTransectionCollection');
-const userAllTransactionCollection = client.db('Netpay').collection('userAllTransactionCollection');
+  client.connect();
 
-// create a jwt token and send clinte side
-app.post('/jwt', (req, res) => {
-  const user = req.body;
-  // console.log("this is user",user)
-  const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {expiresIn: '6h'})
+  const userCollection = client.db('Netpay').collection('userCollection');
+  const agentTransactionCollection = client.db('Netpay').collection('agentTransactions');
+  const adminTransectionCollection = client.db('Netpay').collection('adminTransectionCollection');
+  const userAllTransactionCollection = client.db('Netpay').collection('userAllTransactionCollection');
 
-  res.send({token})
+//--------------- create a jwt token and send clinte side-----------------
+  app.post('/jwt', (req, res) => {
+    const user = req.body;
+    const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {expiresIn: '6h'})
+    res.send({token})
+  })
 
-  // console.log({token})
+// -------------------------------------------------------------------
 
-})
+  app.get('/',(req,res) => {
+    res.send({mesage : 'Everything runing fine...'})
+  })
 
-app.get('/',(req,res) => {
-  res.send({mesage : 'Everything runing fine...'})
-})
+  app.get('/allUsers',async(req,res) => {
+    const result = await userCollection.find().toArray()
+    res.send(result)
+  }) 
+ 
+
+// --------------------------------------------------------------------
+
 
 // user collection api
 app.post('/allUsers',async (req,res) => {
@@ -84,13 +95,9 @@ app.post('/allUsers',async (req,res) => {
   }
   const result = await userCollection.insertOne(user)
   res.send(result)
-  // console.log(result)
 })
 
-app.get('/allUsers',async(req,res) => {
-  const result = await userCollection.find().toArray()
-  res.send(result)
-}) 
+
 
 // get specific user
 app.get('/allUsers/:email',async(req,res) =>{
@@ -320,55 +327,67 @@ app.get('/agentAllTransactions', async (req, res) => {
   res.send(result);
 })
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // sendmoney functionality apply
 app.patch('/sendmoney', async (req, res) => {
   const sendmoneyInformation = req.body;
-
   const senderNumber = sendmoneyInformation.sdn;
   const receiverNumber = sendmoneyInformation.rcn;
   const amount = parseInt(sendmoneyInformation.tk);
-  
-  if (isNaN(amount)) {
-    return res.status(400).send({ message: 'Invalid amount' });
+
+  const senderUser = await userCollection.findOne({number: senderNumber});
+
+  if ( senderUser.balance < amount) {
+    res.send({message :'Insufficient balance'})
+  }else{
+
+    const receiverUser = await userCollection.findOne({number:receiverNumber});
+
+    if(!receiverUser){
+      console.log('user not found')
+      res.send({message : 'no user found'})
+    }else{
+
+      // ----- Reducing balance from sender
+      const querySender = { number: senderNumber };
+      const updatedSenderBalance =  senderUser.balance - amount;
+      await userCollection.updateOne(querySender, { $set: { balance: updatedSenderBalance } });
+
+      // ----- Adding balance to receiver
+      const queryReceiver = { number: receiverNumber };
+      const updatedReceiverBalance = receiverUser.balance + amount;
+      const result = await userCollection.updateOne(queryReceiver, { $set: { balance: updatedReceiverBalance } });
+      res.send(result)
+    }
   }
-
-  const querySender = { number: senderNumber };
-  const senderUser = await userCollection.findOne(querySender);
-
-  if (!senderUser) {
-    return res.status(404).send({ message: 'Sender not found' });
-  }
-
-  const sendUserpreviusbalance = senderUser.balance;
-  // console.log(sendUserpreviusbalance)
-
-  if (sendUserpreviusbalance < amount) {
-    console.log('tk nai')
-    return res.status(400).send({ message: 'Insufficient balance' });
-  }
-
-  const queryReceiver = { number: receiverNumber };
-  const receiverUser = await userCollection.findOne(queryReceiver);
-
-  if (!receiverUser) {
-    return res.status(404).send({ message: 'Receiver not found' });
-  }
-
-  const receiveruserPreviusbalance = receiverUser.balance;
-  // console.log('receiver balance',receiveruserPreviusbalance)
-
-  const updatedSenderBalance = sendUserpreviusbalance - amount;
-  const updatedReceiverBalance = receiveruserPreviusbalance + amount;
-
-  console.log('update receiver',updatedReceiverBalance)
-  console.log('update sender',updatedSenderBalance)
-
-  await userCollection.updateOne(querySender, { $set: { balance: updatedSenderBalance } });
-  await userCollection.updateOne(queryReceiver, { $set: { balance: updatedReceiverBalance } });
-
-  console.log('Money transfer successful');
-  return res.send({ message: 'Money transfer successful' });
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 // cash out to Agent
 app.patch ('/cashOut',async(req, res) => {
